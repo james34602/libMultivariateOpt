@@ -2,11 +2,13 @@
 ### Features
 
 - Differential evolution
+
 Bezier Search, almost parameter free, allow bound constraints
 
 - Nelder-Mead Simplex search with bound constraints
 
 - Flower pollination search
+
 Standard approach, allow bound constraints
 
 ### Examples
