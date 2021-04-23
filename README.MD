@@ -20,8 +20,10 @@ Standard approach, allow bound constraints
 #### Q/A
 
 - Can I add nonlinear/linear constraints other than just bound constraints?
+
 Yes, those are problem dependent, you have to modify your cost function in some ways.
 
 - Why are the optimizer function argument could be that long?
+
 We allow user to choose probability density functions(PDF), different PDF affects the random number distribution of the optmizer itself.
 Last argument is callback function pointer, it allows programmer display the process of optimization to GUI, if there is no GUI, pass NULL, if there is a GUI, implement your own callback function.
