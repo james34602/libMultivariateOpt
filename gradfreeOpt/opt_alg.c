@@ -284,7 +284,7 @@ double minArray(double *x, unsigned int N, unsigned int *ind)
 	*ind = index;
 	return min;
 }
-double fminsearch(double (*funcPtr)(double*,void*), void *userdat, double *x, unsigned int n, double TolX, double TolFun, unsigned int MaxIter, double *outX)
+double fminsearch(double (*funcPtr)(double*,void*), void *userdat, double *x, unsigned int n, double TolX, double TolFun, unsigned int MaxIter, double *outX, void(*optStatus)(void*, unsigned int, double*, double*), void *optHost)
 {
 	unsigned int i, j;
 	const double rho = 1;
@@ -463,6 +463,8 @@ double fminsearch(double (*funcPtr)(double*,void*), void *userdat, double *x, un
 			}
 		}
 		sort(fv, n + 1, sotIdx);
+		if (optStatus)
+			optStatus(optHost, n, v, &fv[0]);
 		for (j = 0; j < n + 1; j++)
 			memcpy(v2 + j * n, v + sotIdx[j] * n, n * sizeof(double));
 		ptr = v;
@@ -510,7 +512,7 @@ double wrapperFunctionBoundConstraint(double *x, void *usd)
 	double fval = userdata->funcPtr(userdata->xtrans, userdata->userdat);
 	return fval;
 }
-double fminsearchbnd(double(*funcPtr)(double*, void*), void *userdat, double *x0, double *lb, double *ub, unsigned int n, double TolX, double TolFun, unsigned int MaxIter, double *outX)
+double fminsearchbnd(double(*funcPtr)(double*, void*), void *userdat, double *x0, double *lb, double *ub, unsigned int n, double TolX, double TolFun, unsigned int MaxIter, double *outX, void(*optStatus)(void*, unsigned int, double*, double*), void *optHost)
 {
 	unsigned int i;
 	wrapperData params;
@@ -554,7 +556,7 @@ double fminsearchbnd(double(*funcPtr)(double*, void*), void *userdat, double *x0
 			x0u[i] = 2.0 * M_PI + asin(max(-1.0, min(1.0, x0u[i])));
 		}
 	}
-	double fval = fminsearch(wrapperFunctionBoundConstraint, (void*)&params, x0u, n, TolX, TolFun, MaxIter, outX);
+	double fval = fminsearch(wrapperFunctionBoundConstraint, (void*)&params, x0u, n, TolX, TolFun, MaxIter, outX, optStatus, optHost);
 	free(x0u);
 	xtransform(outX, &params);
 	memcpy(outX, params.xtrans, n * sizeof(double));
@@ -566,16 +568,15 @@ double fminsearchbnd(double(*funcPtr)(double*, void*), void *userdat, double *x0
 	}
 	return fval;
 }
-double differentialEvolution(double(*funcPtr)(double*, void*), void *userdat, double *initialSolution, unsigned int K, unsigned int N, unsigned int D, double *low, double *up, unsigned int MaxIter, double *gbest, pcg32x2_random_t *PRNG)
+double differentialEvolution(double(*funcPtr)(double*, void*), void *userdat, double *initialSolution, unsigned int K, unsigned int N, unsigned int D, double *low, double *up, unsigned int MaxIter, double *gbest, pcg32x2_random_t *PRNG, double(*pdf1)(pcg32x2_random_t*), void(*optStatus)(void*, unsigned int, double*, double*), void *optHost)
 {
 	unsigned i, j;
 	// Initialization
-	double *S;
+	double *S = (double*)malloc(K * N * D * sizeof(double));
 	if (initialSolution)
-		S = initialSolution;
+		memcpy(S, initialSolution, K * N * D * sizeof(double));
 	else
 	{
-		S = (double*)malloc(K * N * D * sizeof(double));
 		for (i = 0; i < K * N; i++)
 		{
 			for (j = 0; j < D; j++)
@@ -590,7 +591,6 @@ double differentialEvolution(double(*funcPtr)(double*, void*), void *userdat, do
 	double gmin = minArray(fitS, K * N, &ind);
 	for (i = 0; i < D; i++)
 		gbest[i] = S[ind * D + i];
-	double *costHistory = (double*)malloc(MaxIter * sizeof(double));
 	double *F = (double*)malloc(N * sizeof(double));
 	double *T = (double*)malloc(N * D * sizeof(double));
 	unsigned int *j0 = (unsigned int*)malloc(N * sizeof(unsigned int));
@@ -699,17 +699,17 @@ double differentialEvolution(double(*funcPtr)(double*, void*), void *userdat, do
 			map = map2;
 		for (i = 0; i < N; i++)
 		{
-			tmp1 = randn_pcg32x2(PRNG);
+			tmp1 = pdf1(PRNG);
 			tmp2 = c_rand(PRNG);
-			double tmp3 = randn_pcg32x2(PRNG);
+			double tmp3 = pdf1(PRNG);
 			double tmp4 = randi(PRNG, 7.0); // Different upper bound different distribution sharpness
 			double tmp5 = 1.0 + tmp2;
 			double tmp6 = pow(tmp3, tmp4);
 			if (fabs(tmp5) > 1.0 && fabs(tmp6) > 11.0)
 				tmp6 = ((tmp6 > 0.0) ? 1.0 : ((tmp6 < 0.0) ? -1.0 : 0.0)) * 11.0;
 			double F = tmp1 * pow(tmp5, tmp6);
-			double w1 = randn_pcg32x2(PRNG);
-			double w2 = randn_pcg32x2(PRNG);
+			double w1 = pdf1(PRNG);
+			double w2 = pdf1(PRNG);
 			for (j = 0; j < D; j++)
 				T[i * D + j] = P[i * D + j] + (double)map[i * D + j] * F * (w1 * (dv2[i * D + j] - P[i * D + j]) + w2 * ((S[j2_first[i] * D + j] - P[i * D + j])));
 		}
@@ -752,12 +752,12 @@ double differentialEvolution(double(*funcPtr)(double*, void*), void *userdat, do
 			memcpy(S + j0[i] * D, P + i * D, D * sizeof(double));
 			fitS[j0[i]] = fitP[i];
 		}
-		costHistory[epk] = gmin;
+		if (optStatus)
+			optStatus(optHost, D, gbest, &gmin);
 	}
 	// Free optimizer
 	free(fitS);
 	free(fitSTmp);
-	free(costHistory);
 	free(F);
 	free(T);
 	free(j0);
@@ -773,7 +773,97 @@ double differentialEvolution(double(*funcPtr)(double*, void*), void *userdat, do
 	free(map1);
 	free(map2);
 	free(h);
-	if (!initialSolution)
-		free(S);
+	free(S);
+	return gmin;
+}
+double flowerPollination(double(*funcPtr)(double*, void*), void *userdat, double *initialSolution, double *low, double *up, unsigned int D, unsigned int popSize, double p, double weightStep, unsigned int N_iter, double *gbest, pcg32x2_random_t *PRNG, double(*pdf1)(pcg32x2_random_t*), void(*optStatus)(void*, unsigned int, double*, double*), void *optHost)
+{
+	unsigned i, j;
+	// Initialization
+	double *Sol = (double*)malloc(popSize * D * sizeof(double));
+	if (initialSolution)
+		memcpy(Sol, initialSolution, popSize * D * sizeof(double));
+	else
+	{
+		for (i = 0; i < popSize; i++)
+		{
+			for (j = 0; j < popSize; j++)
+				Sol[i * D + j] = c_rand(PRNG) * (up[j] - low[j]) + low[j];
+		}
+	}
+	double *Fitness = (double*)malloc(popSize * sizeof(double));
+	for (i = 0; i < popSize; i++)
+		Fitness[i] = funcPtr(Sol + i * D, userdat);
+	unsigned int ind;
+	double gmin = minArray(Fitness, popSize, &ind);
+	for (i = 0; i < D; i++)
+		gbest[i] = Sol[ind * D + i];
+	double *S = (double*)malloc(popSize * D * sizeof(double));
+	memcpy(S, Sol, popSize * D * sizeof(double));
+	unsigned int *JK = (unsigned int*)malloc(popSize * sizeof(unsigned int));
+	for (unsigned int t = 0; t < N_iter; t++)
+	{
+		// Loop over all solutions
+		for (unsigned int pol = 0; pol < popSize; pol++)
+		{
+			// Pollens are carried by insects and thus can move on large scale
+			// This L should be drawn from the Levy distribution
+			// Formula: x_i ^ { t + 1 } = x_i ^ t + L(x_i^t - gbest)
+			double tmp1 = c_rand(PRNG);
+			if (tmp1 > p) // Probability (p) is checked after drawing a rand
+			{
+				const double beta = 3.0 / 2.0;
+				double sigma = pow(tgamma(1 + beta) * sin(M_PI * beta / 2) / (tgamma((1 + beta) / 2) * beta * pow(2.0, (beta - 1.0) / 2.0)), 1.0 / beta);
+				for (i = 0; i < D; i++)
+				{
+					double u = pdf1(PRNG) * sigma;
+					double v = pdf1(PRNG);
+					double dS = (weightStep * (u / pow(fabs(v), (1 / beta)))) * (Sol[pol * D + i] - gbest[i]); // Caclulate the step increments
+					S[pol * D + i] = Sol[pol * D + i] + dS; // Update the new solutions
+					// Check new solutions to satisfy the simple limits/bounds
+					if (S[pol * D + i] < low[i])
+						S[pol * D + i] = low[i];
+					if (S[pol * D + i] > up[i])
+						S[pol * D + i] = up[i];
+				}
+			}
+			else
+			{
+				double epsilon = c_rand(PRNG);
+				randperm(JK, popSize, PRNG);
+				// As they are random, the first two entries also random
+				// If the flower are the same or similar species, then
+				// they can be pollenated, otherwise, no action is needed.
+				// Formula: x_i^{t+1}+epsilon*(x_j^t-x_k^t)
+				for (i = 0; i < D; i++)
+				{
+					S[pol * D + i] = S[pol * D + i] + epsilon * (Sol[JK[0] * D + i] - Sol[JK[1] * D + i]);
+					if (S[pol * D + i] < low[i])
+						S[pol * D + i] = low[i];
+					if (S[pol * D + i] > up[i])
+						S[pol * D + i] = up[i];
+				}
+			}
+			// Evaluate the objective values of the new solutions
+			double Fnew = funcPtr(&S[pol * D], userdat);
+			if (Fnew <= Fitness[pol])
+			{
+				memcpy(&Sol[pol * D], &S[pol * D], D * sizeof(double));
+				Fitness[pol] = Fnew;
+			}
+			// Update the current global best among the population
+			if (Fnew <= gmin)
+			{
+				memcpy(gbest, &S[pol * D], D * sizeof(double));
+				gmin = Fnew;
+				if (optStatus)
+					optStatus(optHost, D, gbest, &gmin);
+			}
+		}
+	}
+	free(Fitness);
+	free(S);
+	free(JK);
+	free(Sol);
 	return gmin;
 }

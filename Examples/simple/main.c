@@ -32,19 +32,22 @@ int main()
 		low[j] = -2.0;
 		up[j] = 2.0;
 	}
-	// DE
+	double(*pdf1)(pcg32x2_random_t*) = rand_tri_pcg32x2; // Three supported PDF, randn_pcg32x2, rand_tri_pcg32x2, rand_hann
 	void *userdataPtr = 0;
 	double *gbestDE = (double*)malloc(dim * sizeof(double));
+	double gmin = differentialEvolution(optSin, userdataPtr, initialAns, K, N, dim, low, up, 100, gbestDE, &PRNG, pdf1, 0, 0);
 	double *gbestfminsearch = (double*)malloc(dim * sizeof(double));
-	double gmin = differentialEvolution(optSin, userdataPtr, initialAns, K, N, dim, low, up, 1000, gbestDE, &PRNG);
-	double fval = fminsearchbnd(optSin, userdataPtr, gbestDE, low, up, dim, 1e-8, 1e-8, 1000, gbestfminsearch);
-	printf("%1.14lf %1.14lf\n", gmin, fval);
+	double fval = fminsearchbnd(optSin, userdataPtr, gbestDE, low, up, dim, 1e-8, 1e-8, 100, gbestfminsearch, 0, 0);
+	double *gbestFPA = (double*)malloc(dim * sizeof(double));
+	double gmin2 = flowerPollination(optSin, userdataPtr, initialAns, low, up, dim, K * N, 0.1, 0.05, 200, gbestFPA, &PRNG, pdf1, 0, 0);
+	printf("%1.14lf %1.14lf %1.14lf\n", gmin, fval, gmin2);
 	for (i = 0; i < dim; i++)
-		printf("%1.14lf,", gbestfminsearch[i]);
+		printf("%1.14lf,%1.14lf,%1.14lf", gbestDE[i], gbestfminsearch[i], gbestFPA[i]);
 	free(initialAns);
 	free(low);
 	free(up);
 	free(gbestDE);
 	free(gbestfminsearch);
+	free(gbestFPA);
 	return 0;
 }

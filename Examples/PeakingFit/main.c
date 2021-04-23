@@ -151,6 +151,17 @@ char* readTextFile(char *filename)
 	}
 	return buffer;
 }
+typedef struct
+{
+	double *display1;
+	double display2;
+} yourGUI;
+void optimizationHistoryCallback(void *hostData, unsigned int n, double *currentResult, double *currentFval)
+{
+	yourGUI *ptr = (yourGUI*)hostData;
+	memcpy(ptr->display1, currentResult, n * sizeof(double));
+	ptr->display2 = *currentFval;
+}
 // Optimize peaking filters(IIR SOS)
 int main()
 {
@@ -324,14 +335,23 @@ int main()
 	userdat.target = target;
 	userdat.tmp = tmpDat;
 	userdat.gridSize = ud_gridSize;
+	double(*pdf1)(pcg32x2_random_t*) = randn_pcg32x2; // Three supported PDF, randn_pcg32x2, rand_tri_pcg32x2, rand_hann
 	void *userdataPtr = (void*)&userdat;
-	double *gbestDE = (double*)malloc(dim * sizeof(double));
-	double *gbestfminsearch = (double*)malloc(dim * sizeof(double));
+	// GUI display?
+	yourGUI gui;
+	gui.display1 = (double*)malloc(dim * sizeof(double));
+	void *guiData = (void*)&gui;
+	void(*optStatus)(void*, unsigned int, double*, double*) = optimizationHistoryCallback;
 	// Method 1
-	double gmin = differentialEvolution(peakingCostFunctionMap, userdataPtr, initialAns, K, N, dim, low, up, 10, gbestDE, &PRNG);
+	double *gbestDE = (double*)malloc(dim * sizeof(double));
+	double gmin = differentialEvolution(peakingCostFunctionMap, userdataPtr, initialAns, K, N, dim, low, up, 10000, gbestDE, &PRNG, pdf1, optStatus, guiData);
 	// Method 2
-	double fval = fminsearchbnd(peakingCostFunctionMap, userdataPtr, initialAns, low, up, dim, 1e-8, 1e-8, 10, gbestfminsearch);
-	printf("%1.14lf %1.14lf\n", gmin, fval);
+	double *gbestfminsearch = (double*)malloc(dim * sizeof(double));
+	double fval = fminsearchbnd(peakingCostFunctionMap, userdataPtr, initialAns, low, up, dim, 1e-8, 1e-8, 10000, gbestfminsearch, optStatus, guiData);
+	// Method 3
+	double *gbestFPA = (double*)malloc(dim * sizeof(double));
+	double gmin2 = flowerPollination(peakingCostFunctionMap, userdataPtr, initialAns, low, up, dim, K * N, 0.1, 0.05, 2000, gbestFPA, &PRNG, pdf1, optStatus, guiData);
+	printf("%1.14lf %1.14lf %1.14lf\n", gmin, fval, gmin2);
 	for (i = 0; i < dim; i++)
 		printf("%1.14lf,", gbestfminsearch[i]);
 	free(maximaIndex);
@@ -349,7 +369,10 @@ int main()
 	free(tmpDat);
 	free(gbestDE);
 	free(gbestfminsearch);
+	free(gbestFPA);
 	free_sample_vector(&xAxis);
 	free_sample_vector(&yAxis);
+	// Clean up your display GUI
+	free(gui.display1);
 	return 0;
 }

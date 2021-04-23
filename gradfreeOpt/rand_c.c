@@ -221,8 +221,8 @@ double randn_pcg32x2(pcg32x2_random_t *rng)
 }
 double rand_tri_pcg32x2(pcg32x2_random_t *rng)
 {
-	const double a = -2.0;
-	const double b = 2.0;
+	const double a = -6.5;
+	const double b = 6.5;
 	const double c = 0.0;
 	double X;
 	double U = c_rand(rng);
