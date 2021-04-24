@@ -53,3 +53,12 @@ static double npointWndFunction(double val, double *x, double *y, int n)
 	else
 		return ((val - x[j - 1]) / (x[j] - x[j - 1])) * (y[j] - y[j - 1]) + y[j - 1]; // Interpolation
 }
+static double linearInterpolationNoExtrapolate(double val, double *x, double *y, int n)
+{
+	if (val <= x[0])
+		return y[0];
+	if (val >= x[n - 1])
+		return y[n - 1];
+	size_t j = fast_upper_bound4(x, n, &val);
+	return ((val - x[j - 1]) / (x[j] - x[j - 1])) * (y[j] - y[j - 1]) + y[j - 1]; // Interpolation
+}

@@ -163,8 +163,45 @@ void optimizationHistoryCallback(void *hostData, unsigned int n, double *current
 	ptr->display2 = *currentFval;
 }
 // Optimize peaking filters(IIR SOS)
+unsigned int getAuditoryBandLen(const int xLen, double avgBW)
+{
+	unsigned int a = 3;
+	double step = avgBW;
+	unsigned int cnt = 0;
+	while (a + step - 1.0 < xLen)
+	{
+		a = a + (unsigned int)ceil(round(step) * 0.5);
+		step = step * avgBW;
+		cnt = cnt + 1;
+	}
+	return cnt;
+}
+void initInterpolationList(unsigned int *indexList, double *levels, double avgBW, unsigned int fcLen, unsigned int xLim)
+{
+	unsigned int a = 3;
+	double step = avgBW;
+	levels[0] = (1.0 - 1.0) / (double)xLim;
+	levels[1] = (2.0 - 1.0) / (double)xLim;
+	for (int i = 0; i < fcLen; i++)
+	{
+		unsigned int stepp = (unsigned int)round(step);
+		indexList[(i << 1) + 0] = a - 1;
+		indexList[(i << 1) + 1] = a + stepp - 1;
+		levels[i + 2] = ((double)a + ((double)stepp - 1.0) * 0.5 - 1.0) / (double)xLim;
+		a = a + (unsigned int)ceil(((double)stepp) * 0.5);
+		step = step * avgBW;
+	}
+	indexList[(fcLen << 1) + 0] = a - 1;
+	indexList[(fcLen << 1) + 1] = xLim;
+	levels[2 + fcLen] = ((a + xLim) * 0.5 - 1.0) / (double)xLim;
+	levels[2 + fcLen + 1] = (xLim - 1.0) / (double)xLim;
+	if (levels[2 + fcLen + 1] == levels[2 + fcLen])
+		levels[2 + fcLen] = (levels[2 + fcLen - 1] + levels[2 + fcLen + 1]) * 0.5;
+}
 int main()
 {
+	pcg32x2_random_t PRNG;
+	pcg32x2_srandom_r(&PRNG, 36u, 84u, 54u, 54u);
 	sample_vector xAxis, yAxis;
 	init_sample_vector(&xAxis, 128, 64);
 	init_sample_vector(&yAxis, 128, 64);
@@ -210,66 +247,133 @@ int main()
 	unsigned int N = 3;
 	double fs = 44100.0;
 	unsigned int ud_gridSize = yAxis.inuse;
-	double *flt_freqList = xAxis.data;
-	double *target = yAxis.data;
-	unsigned int numMaximas, numMinimas;
-	unsigned int *maximaIndex = peakfinder_wrapper(target, ud_gridSize, 0.1, 1, &numMaximas);
-	unsigned int *minimaIndex = peakfinder_wrapper(target, ud_gridSize, 0.1, 0, &numMinimas);
-	double *flt_fc = (double*)malloc((numMaximas + numMinimas) * sizeof(double));
-	unsigned int *idx = (unsigned int*)malloc((numMaximas + numMinimas) * sizeof(unsigned int));
-	for (i = 0; i < numMaximas; i++)
-		flt_fc[i] = flt_freqList[maximaIndex[i]];
-	for (i = numMaximas; i < (numMaximas + numMinimas); i++)
-		flt_fc[i] = flt_freqList[minimaIndex[i - numMaximas]];
-	sort(flt_fc, (numMaximas + numMinimas), idx);
-	//for (i = 0; i < (numMaximas + numMinimas); i++)
-	//	printf("%1.14lf\n", flt_fc[i]);
-	double smallestJump = 0.0;
-	double lowestFreq2Gen = 200.0;
-	double highestFreq2Gen = 14000.0;
-	pcg32x2_random_t PRNG;
-	pcg32x2_srandom_r(&PRNG, 36u, 84u, 54u, 54u);
-	double *dFreqDiscontin = (double*)malloc((numMaximas + numMinimas) * sizeof(double));
-	double *dif = (double*)malloc((numMaximas + numMinimas) * sizeof(double));
-	while (smallestJump <= 20.0)
+	double *flt_freqList = (double*)malloc(ud_gridSize * sizeof(double));
+	double *target = (double*)malloc(ud_gridSize * sizeof(double));
+	memcpy(flt_freqList, xAxis.data, ud_gridSize * sizeof(double));
+	memcpy(target, yAxis.data, ud_gridSize * sizeof(double));
+	free_sample_vector(&xAxis);
+	free_sample_vector(&yAxis);
+	// Detect X axis linearity
+	// Assume frequency axis is sorted
+	double first = flt_freqList[0];
+	double last = flt_freqList[ud_gridSize - 1];
+	double stepLinspace = (last - first) / (double)(ud_gridSize - 1);
+	double residue = 0.0;
+	for (i = 0; i < ud_gridSize; i++)
 	{
-		derivative(flt_fc, numMaximas + numMinimas, 1, dFreqDiscontin, dif);
-		unsigned int smIdx;
-		smallestJump = minArray(dFreqDiscontin, numMaximas + numMinimas, &smIdx);
-		double newFreq = c_rand(&PRNG) * (highestFreq2Gen - lowestFreq2Gen) + lowestFreq2Gen;
-		flt_fc[smIdx] = newFreq;
-		sort(flt_fc, (numMaximas + numMinimas), idx);
+		double vv = fabs((first + i * stepLinspace) - flt_freqList[i]);
+		residue += vv;
 	}
-	unsigned int numBands;
-	if (flt_fc[0] > 80.0)
+	residue = residue / (double)ud_gridSize;
+	char gdType;
+	if (residue > 10.0) // Allow margin of error, in fact, non-zero residue hint the grid is nonuniform
 	{
-		numBands = numMaximas + numMinimas + 2;
-		double *tmp = (double*)malloc(numBands * sizeof(double));
-		memcpy(tmp + 2, flt_fc, (numMaximas + numMinimas) * sizeof(double));
-		tmp[0] = 20.0; tmp[1] = 60.0;
-		free(flt_fc);
-		flt_fc = tmp;
-	}
-	else if (flt_fc[0] > 40.0)
-	{
-		numBands = numMaximas + numMinimas + 1;
-		double *tmp = (double*)malloc(numBands * sizeof(double));
-		memcpy(tmp + 1, flt_fc, (numMaximas + numMinimas) * sizeof(double));
-		tmp[0] = 20.0;
-		free(flt_fc);
-		flt_fc = tmp;
+		gdType = 1;
+		printf("Nonuniform grid\n");
 	}
 	else
-		numBands = numMaximas + numMinimas;
-	double *flt_peak_g = (double*)malloc(numBands * sizeof(double));
-	for (i = 0; i < numBands; i++)
-		flt_peak_g[i] = npointWndFunction(flt_fc[i], flt_freqList, target, ud_gridSize);
-	double lowFc = 20;
-	double upFc = fs / 2 - 1;
-	double lowQ = 0.2;
-	double upQ = 16;
-	double lowGain = target[0];
-	double upGain = target[0];
+	{
+		gdType = 0;
+		printf("Uniform grid\n");
+	}
+	// Convert uniform grid to log grid is recommended
+	// Nonuniform grid doesn't necessary to be a log grid, but we can force to make it log
+	char forceConvertCurrentGrid2OctaveGrid = 0;
+	if (forceConvertCurrentGrid2OctaveGrid)
+	{
+		unsigned int detailLinearGridLen;
+		double *spectrum;
+		double *linGridFreq;
+		if (!gdType)
+		{
+			detailLinearGridLen = ud_gridSize;
+			spectrum = (double*)malloc(detailLinearGridLen * sizeof(double));
+			linGridFreq = (double*)malloc(detailLinearGridLen * sizeof(double));
+			for (i = 0; i < detailLinearGridLen; i++)
+			{
+				spectrum[i] = target[i];
+				linGridFreq[i] = i / ((double)detailLinearGridLen) * (fs / 2);
+			}
+		}
+		else
+		{
+			detailLinearGridLen = max(ud_gridSize, 8192); // Larger the value could be take care large(Especially for uniform grid)
+			spectrum = (double*)malloc(detailLinearGridLen * sizeof(double));
+			linGridFreq = (double*)malloc(detailLinearGridLen * sizeof(double));
+			for (i = 0; i < detailLinearGridLen; i++)
+			{
+				double fl = i / ((double)detailLinearGridLen) * (fs / 2);
+				spectrum[i] = linearInterpolationNoExtrapolate(fl, flt_freqList, target, ud_gridSize);
+				linGridFreq[i] = fl;
+			}
+		}
+		// Init octave grid shrinker
+		const double avgBW = 1.005; // Smaller the value less smooth the output gonna be, of course, don't go too large
+		unsigned int arrayLen = detailLinearGridLen;
+		unsigned int fcLen = getAuditoryBandLen(arrayLen, avgBW);
+		unsigned int idxLen = fcLen + 1;
+		unsigned int *indexList = (unsigned int*)malloc((idxLen << 1) * sizeof(unsigned int));
+		double *levels = (double*)malloc((idxLen + 3) * sizeof(double));
+		double *multiplicationPrecompute = (double*)malloc(idxLen * sizeof(double));
+		size_t virtualStructSize = sizeof(unsigned int) + sizeof(double) + sizeof(unsigned int) + (idxLen << 1) * sizeof(unsigned int) + idxLen * sizeof(double) + (idxLen + 3) * sizeof(double);
+		double *shrinkedAxis = (double*)malloc((idxLen + 3) * sizeof(double));
+		double reciprocal = 1.0 / arrayLen;
+		initInterpolationList(indexList, levels, avgBW, fcLen, arrayLen);
+		for (unsigned int i = 0; i < idxLen; i++)
+			multiplicationPrecompute[i] = 1.0 / (indexList[(i << 1) + 1] - indexList[(i << 1) + 0]);
+		// Do actual axis conversion
+		shrinkedAxis[0] = spectrum[0];
+		shrinkedAxis[1] = spectrum[1];
+		unsigned int i;
+		double sum;
+		for (i = 0; i < idxLen; i++)
+		{
+			sum = 0.0;
+			for (unsigned int j = indexList[(i << 1) + 0]; j < indexList[(i << 1) + 1]; j++)
+				sum += spectrum[j];
+			shrinkedAxis[2 + i] = sum * multiplicationPrecompute[i];
+		}
+		shrinkedAxis[(idxLen + 3) - 1] = shrinkedAxis[(idxLen + 3) - 2];
+		double *ascendingIdx = (double*)malloc(arrayLen * sizeof(double));
+		for (i = 0; i < arrayLen; i++)
+			ascendingIdx[i] = i;
+		unsigned int hz18 = 0;
+		for (i = 0; i < idxLen + 3; i++)
+		{
+			double freqIdxUR = levels[hz18 + i] * arrayLen;
+			double realFreq = linearInterpolationNoExtrapolate(freqIdxUR, ascendingIdx, linGridFreq, arrayLen);
+			hz18 = i;
+			if (realFreq >= 18.0)
+				break;
+		}
+		double *newflt_freqList = (double*)malloc((idxLen + 3 - hz18) * sizeof(double));
+		double *newTarget = (double*)malloc((idxLen + 3 - hz18) * sizeof(double));
+		for (i = 0; i < idxLen + 3 - hz18; i++)
+		{
+			double freqIdxUR = levels[hz18 + i] * arrayLen;
+			newflt_freqList[i] = linearInterpolationNoExtrapolate(freqIdxUR, ascendingIdx, linGridFreq, arrayLen);
+			newTarget[i] = shrinkedAxis[hz18 + i];
+		}
+		free(shrinkedAxis);
+		free(ascendingIdx);
+		free(linGridFreq);
+		ud_gridSize = idxLen + 3 - hz18;
+		free(flt_freqList);
+		free(target);
+		flt_freqList = newflt_freqList;
+		target = newTarget;
+		free(levels);
+		free(multiplicationPrecompute);
+		free(indexList);
+		free(spectrum);
+	}
+	// Bound constraints
+	double lowFc = 20; // Hz
+	double upFc = fs / 2 - 1; // Hz
+	double lowQ = 0.2; // 0.01 - 1000, higher shaper the filter
+	double upQ = 16; // 0.01 - 1000, higher shaper the filter
+	double lowGain = target[0]; // dB
+	double upGain = target[0]; // dB
 	for (i = 1; i < ud_gridSize; i++)
 	{
 		if (target[i] < lowGain)
@@ -279,6 +383,45 @@ int main()
 	}
 	lowGain -= 5.0;
 	upGain += 5.0;
+	unsigned int numMaximas, numMinimas;
+	unsigned int *maximaIndex = peakfinder_wrapper(target, ud_gridSize, 0.1, 1, &numMaximas);
+	unsigned int *minimaIndex = peakfinder_wrapper(target, ud_gridSize, 0.1, 0, &numMinimas);
+	unsigned int numBands = numMaximas + numMinimas;
+	double *flt_fc = (double*)malloc(numBands * sizeof(double));
+	unsigned int *idx = (unsigned int*)malloc(numBands * sizeof(unsigned int));
+	for (i = 0; i < numMaximas; i++)
+		flt_fc[i] = flt_freqList[maximaIndex[i]];
+	for (i = numMaximas; i < numBands; i++)
+		flt_fc[i] = flt_freqList[minimaIndex[i - numMaximas]];
+	sort(flt_fc, numBands, idx);
+	// Initial value must not get out-of-bound, more importantly.
+	// If value go too extreme, NaN will happens when frequency place on either too close to DC and touching/beyond Nyquist
+	for (i = 0; i < numBands; i++)
+	{
+		if (flt_fc[i] < lowFc)
+			flt_fc[i] = lowFc;
+		if (flt_fc[i] > upFc)
+			flt_fc[i] = upFc;
+	}
+	// Naive way to prevent nearby filters go too close, because they could contribute nothing
+	double smallestJump = 0.0;
+	double lowestFreq2Gen = 200.0;
+	double highestFreq2Gen = 14000.0;
+	double *dFreqDiscontin = (double*)malloc(numBands * sizeof(double));
+	double *dif = (double*)malloc(numBands * sizeof(double));
+	while (smallestJump <= 20.0)
+	{
+		derivative(flt_fc, numBands, 1, dFreqDiscontin, dif);
+		unsigned int smIdx;
+		smallestJump = minArray(dFreqDiscontin, numBands, &smIdx);
+		double newFreq = c_rand(&PRNG) * (highestFreq2Gen - lowestFreq2Gen) + lowestFreq2Gen;
+		flt_fc[smIdx] = newFreq;
+		sort(flt_fc, numBands, idx);
+	}
+	free(idx);
+	double *flt_peak_g = (double*)malloc(numBands * sizeof(double));
+	for (i = 0; i < numBands; i++)
+		flt_peak_g[i] = npointWndFunction(flt_fc[i], flt_freqList, target, ud_gridSize);
 	double *initialQ = (double*)malloc(numBands * sizeof(double));
 	for (i = 0; i < numBands; i++)
 	{
@@ -294,7 +437,7 @@ int main()
 		phi[i] = 4.0 * term1 * term1;
 	}
 	unsigned int dim = numBands * 3;
-	// 起始答案
+	// 为起始答案加入波动
 	double initialLowGain = -1.5;
 	double initialUpGain = 1.5;
 	double initialLowQ = -0.5;
@@ -326,7 +469,7 @@ int main()
 		low[j] = log10(lowFc); low[numBands + j] = lowQ; low[numBands * 2 + j] = lowGain;
 		up[j] = log10(upFc); up[numBands + j] = upQ; up[numBands * 2 + j] = upGain;
 	}
-	// DE
+	// Cost function data setup
 	double *tmpDat = (double*)malloc(ud_gridSize * sizeof(double));
 	optUserdata userdat;
 	userdat.fs = fs;
@@ -335,29 +478,51 @@ int main()
 	userdat.target = target;
 	userdat.tmp = tmpDat;
 	userdat.gridSize = ud_gridSize;
-	double(*pdf1)(pcg32x2_random_t*) = randn_pcg32x2; // Three supported PDF, randn_pcg32x2, rand_tri_pcg32x2, rand_hann
 	void *userdataPtr = (void*)&userdat;
+	double *gbestDE = (double*)malloc(dim * sizeof(double));
+	double *gbestfminsearch = (double*)malloc(dim * sizeof(double));
+	double *gbestFPA = (double*)malloc(dim * sizeof(double));
 	// GUI display?
 	yourGUI gui;
 	gui.display1 = (double*)malloc(dim * sizeof(double));
 	void *guiData = (void*)&gui;
 	void(*optStatus)(void*, unsigned int, double*, double*) = optimizationHistoryCallback;
-	// Method 1
-	double *gbestDE = (double*)malloc(dim * sizeof(double));
-	double gmin = differentialEvolution(peakingCostFunctionMap, userdataPtr, initialAns, K, N, dim, low, up, 10000, gbestDE, &PRNG, pdf1, optStatus, guiData);
-	// Method 2
-	double *gbestfminsearch = (double*)malloc(dim * sizeof(double));
-	double fval = fminsearchbnd(peakingCostFunctionMap, userdataPtr, initialAns, low, up, dim, 1e-8, 1e-8, 10000, gbestfminsearch, optStatus, guiData);
-	// Method 3
-	double *gbestFPA = (double*)malloc(dim * sizeof(double));
-	double gmin2 = flowerPollination(peakingCostFunctionMap, userdataPtr, initialAns, low, up, dim, K * N, 0.1, 0.05, 2000, gbestFPA, &PRNG, pdf1, optStatus, guiData);
-	printf("%1.14lf %1.14lf %1.14lf\n", gmin, fval, gmin2);
+	// Select probability density function that shapes internal random number distribution
+	double(*pdf1)(pcg32x2_random_t*) = rand_tri_pcg32x2;
+	double gmin = differentialEvolution(peakingCostFunctionMap, userdataPtr, initialAns, K, N, dim, low, up, 20000, gbestDE, &PRNG, pdf1, optStatus, guiData);
+	// DE is relatively robust, but require a lot iteration to converge, we then improve DE result using fminsearch
+	// fminsearchbnd can be a standalone algorithm, but would high dimension or even some simple curve
+	// but overall fminsearchbnd converge faster than other 2 algorithms in current library for current fitting purpose
+	double fval = fminsearchbnd(peakingCostFunctionMap, userdataPtr, gbestDE, low, up, dim, 1e-8, 1e-8, 6000, gbestfminsearch, 0, optStatus, guiData);
+	// Standalone fminsearch
+	double fval2 = fminsearchbnd(peakingCostFunctionMap, userdataPtr, initialAns, low, up, dim, 1e-8, 1e-8, 10000, gbestfminsearch, 0, optStatus, guiData);
+	// Flower pollination could be as robust as DE, user could also improve FPA result using fminsearch
+	double gmin2 = flowerPollination(peakingCostFunctionMap, userdataPtr, initialAns, low, up, dim, K * N, 0.1, 0.05, 3000, gbestFPA, &PRNG, pdf1, optStatus, guiData);
+	printf("%1.14lf %1.14lf %1.14lf %1.14lf\n", gmin, fval, fval2, gmin2);
 	for (i = 0; i < dim; i++)
 		printf("%1.14lf,", gbestfminsearch[i]);
+	// Sort result vector by frequency
+	idx = (unsigned int*)malloc(numBands * sizeof(unsigned int));
+	sort(gbestfminsearch, numBands, idx);
+	double *sortedOptVector = (double*)malloc(dim * sizeof(double));
+	for (i = 0; i < numBands; i++)
+	{
+		sortedOptVector[i] = gbestfminsearch[i];
+		sortedOptVector[numBands + i] = gbestfminsearch[numBands + idx[i]];
+		sortedOptVector[numBands * 2 + i] = gbestfminsearch[numBands * 2 + idx[i]];
+	}
+	printf("\n");
+	for (i = 0; i < dim; i++)
+		printf("%1.14lf,", sortedOptVector[i]);
+	free(gbestDE);
+	free(gbestfminsearch);
+	free(gbestFPA);
+	free(idx);
+	free(sortedOptVector);
+
 	free(maximaIndex);
 	free(minimaIndex);
 	free(flt_fc);
-	free(idx);
 	free(dFreqDiscontin);
 	free(dif);
 	free(flt_peak_g);
@@ -367,12 +532,11 @@ int main()
 	free(low);
 	free(up);
 	free(tmpDat);
-	free(gbestDE);
-	free(gbestfminsearch);
-	free(gbestFPA);
-	free_sample_vector(&xAxis);
-	free_sample_vector(&yAxis);
+
+	free(flt_freqList);
+	free(target);
 	// Clean up your display GUI
 	free(gui.display1);
+	system("pause");
 	return 0;
 }

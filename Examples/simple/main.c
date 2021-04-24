@@ -37,7 +37,7 @@ int main()
 	double *gbestDE = (double*)malloc(dim * sizeof(double));
 	double gmin = differentialEvolution(optSin, userdataPtr, initialAns, K, N, dim, low, up, 100, gbestDE, &PRNG, pdf1, 0, 0);
 	double *gbestfminsearch = (double*)malloc(dim * sizeof(double));
-	double fval = fminsearchbnd(optSin, userdataPtr, gbestDE, low, up, dim, 1e-8, 1e-8, 100, gbestfminsearch, 0, 0);
+	double fval = fminsearchbnd(optSin, userdataPtr, gbestDE, low, up, dim, 1e-8, 1e-8, 100, gbestfminsearch, 0, 0, 0);
 	double *gbestFPA = (double*)malloc(dim * sizeof(double));
 	double gmin2 = flowerPollination(optSin, userdataPtr, initialAns, low, up, dim, K * N, 0.1, 0.05, 200, gbestFPA, &PRNG, pdf1, 0, 0);
 	printf("%1.14lf %1.14lf %1.14lf\n", gmin, fval, gmin2);

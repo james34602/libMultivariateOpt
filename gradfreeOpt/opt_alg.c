@@ -284,13 +284,23 @@ double minArray(double *x, unsigned int N, unsigned int *ind)
 	*ind = index;
 	return min;
 }
-double fminsearch(double (*funcPtr)(double*,void*), void *userdat, double *x, unsigned int n, double TolX, double TolFun, unsigned int MaxIter, double *outX, void(*optStatus)(void*, unsigned int, double*, double*), void *optHost)
+double fminsearch(double (*funcPtr)(double*,void*), void *userdat, double *x, unsigned int n, double TolX, double TolFun, unsigned int MaxIter, double *outX, char adaptive, void(*optStatus)(void*, unsigned int, double*, double*), void *optHost)
 {
 	unsigned int i, j;
-	const double rho = 1;
-	const double chi = 2;
-	const double psi = 0.5;
-	const double sigma = 0.5;
+	const double rho = 1.0;
+	double chi, psi, sigma;
+	if (adaptive)
+	{
+		chi = 1.0 + 2.0 / n;
+		psi = 0.75 - 1.0 / (2.0 * n);
+		sigma = 1.0 - 1.0 / n;
+	}
+	else
+	{
+		chi = 2.0;
+		psi = 0.5;
+		sigma = 0.5;
+	}
 	double *xin = (double*)malloc(n * sizeof(double));
 	memcpy(xin, x, n * sizeof(double));
 	double *v = (double*)malloc(n * (n + 1) * sizeof(double));
@@ -361,7 +371,7 @@ double fminsearch(double (*funcPtr)(double*,void*), void *userdat, double *x, un
 			break;
 		// Compute the reflection point
 
-		// xbar = average of the n (NOT n+1) best points
+		// xbar = average of the n best points
 		for (j = 0; j < n; j++)
 			xbar[j] = v[j];
 		for (i = 0; i < n; i++)
@@ -512,7 +522,7 @@ double wrapperFunctionBoundConstraint(double *x, void *usd)
 	double fval = userdata->funcPtr(userdata->xtrans, userdata->userdat);
 	return fval;
 }
-double fminsearchbnd(double(*funcPtr)(double*, void*), void *userdat, double *x0, double *lb, double *ub, unsigned int n, double TolX, double TolFun, unsigned int MaxIter, double *outX, void(*optStatus)(void*, unsigned int, double*, double*), void *optHost)
+double fminsearchbnd(double(*funcPtr)(double*, void*), void *userdat, double *x0, double *lb, double *ub, unsigned int n, double TolX, double TolFun, unsigned int MaxIter, double *outX, char adaptive, void(*optStatus)(void*, unsigned int, double*, double*), void *optHost)
 {
 	unsigned int i;
 	wrapperData params;
@@ -556,7 +566,7 @@ double fminsearchbnd(double(*funcPtr)(double*, void*), void *userdat, double *x0
 			x0u[i] = 2.0 * M_PI + asin(max(-1.0, min(1.0, x0u[i])));
 		}
 	}
-	double fval = fminsearch(wrapperFunctionBoundConstraint, (void*)&params, x0u, n, TolX, TolFun, MaxIter, outX, optStatus, optHost);
+	double fval = fminsearch(wrapperFunctionBoundConstraint, (void*)&params, x0u, n, TolX, TolFun, MaxIter, outX, adaptive, optStatus, optHost);
 	free(x0u);
 	xtransform(outX, &params);
 	memcpy(outX, params.xtrans, n * sizeof(double));
