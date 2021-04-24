@@ -5,6 +5,12 @@
 #include <float.h>
 #include "gradfreeOpt.h"
 //#include <vld.h>
+#ifndef min
+#define min(a,b) (((a)<(b))?(a):(b))
+#endif
+#ifndef max
+#define max(a,b) (((a)>(b))?(a):(b))
+#endif
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -271,18 +277,18 @@ void sort(double x_data[], const unsigned int xSize, unsigned int idx_data[])
 }
 double minArray(double *x, unsigned int N, unsigned int *ind)
 {
-	double min = x[0];
+	double minV = x[0];
 	unsigned int i, index = 0;
 	for (unsigned int i = 1; i < N; i++)
 	{
-		if (x[i] < min)
+		if (x[i] < minV)
 		{
 			index = i;
-			min = x[i];
+			minV = x[i];
 		}
 	}
 	*ind = index;
-	return min;
+	return minV;
 }
 double fminsearch(double (*funcPtr)(double*,void*), void *userdat, double *x, unsigned int n, double TolX, double TolFun, unsigned int MaxIter, double *outX, char adaptive, void(*optStatus)(void*, unsigned int, double*, double*), void *optHost)
 {
