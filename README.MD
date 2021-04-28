@@ -1,17 +1,19 @@
 ## Gradient free optimization
 ### Features
 
-- Differential evolution
+Differential evolution
 
-Bezier Search, almost parameter free, allow bound constraints
+- Bezier Search
+- Almost parameter free
+- Allow bound constraints, bound clipping or renew probability
 
-- Nelder-Mead Simplex search with bound constraints
+Nelder-Mead Simplex search with bound constraints
 
-Dimension adaptive
+- Dimension adaptive
 
-- Flower pollination search
+Flower pollination search
 
-Standard approach, allow bound constraints
+CHIO search
 
 ### Examples
 
@@ -27,5 +29,5 @@ Yes, those are problem dependent, you have to modify your cost function in some 
 
 - Why are the optimizer function argument could be that long?
 
-We allow user to choose probability density functions(PDF), different PDF affects the random number distribution of the optmizer itself.
+We allow user to choose probability density functions(PDF), different PDF affects the random number distribution of the optmizer solution generator/modifier.
 Last argument is callback function pointer, it allows programmer display the process of optimization to GUI, if there is no GUI, pass NULL, if there is a GUI, implement your own callback function.

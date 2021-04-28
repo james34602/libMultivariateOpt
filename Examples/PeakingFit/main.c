@@ -243,9 +243,7 @@ int main()
 	}
 	free(buf);
 	unsigned int i, j;
-	unsigned int K = 5;
-	unsigned int N = 3;
-	double fs = 44100.0;
+	double fs = 48000.0;
 	unsigned int ud_gridSize = yAxis.inuse;
 	double *flt_freqList = (double*)malloc(ud_gridSize * sizeof(double));
 	double *target = (double*)malloc(ud_gridSize * sizeof(double));
@@ -444,6 +442,9 @@ int main()
 	double initialUpQ = 0.5;
 	double initialLowFc = -log10(2);
 	double initialUpFc = log10(2);
+	// Populaton parameters(Optimization)
+	unsigned int K = 5;
+	unsigned int N = 3;
 	double *initialAns = (double*)malloc(K * N * dim * sizeof(double));
 	for (i = 0; i < K * N; i++)
 	{
@@ -454,14 +455,14 @@ int main()
 			initialAns[i * dim + numBands * 2 + j] = flt_peak_g[j] + c_rand(&PRNG) * (initialUpGain - initialLowGain) + initialLowGain;
 		}
 	}
-	//fp = fopen("bm.txt", "wb");
-	//for (i = 0; i < K * N; i++)
-	//{
-	//	for (j = 0; j < dim; j++)
-	//		fprintf(fp, "%1.14lf ", initialAns[i * dim + j]);
-	//	fprintf(fp, "\n");
-	//}
-	//fclose(fp);
+	/*fp = fopen("bm.txt", "wb");
+	for (i = 0; i < K * N; i++)
+	{
+		for (j = 0; j < dim; j++)
+			fprintf(fp, "%1.14lf ", initialAns[i * dim + j]);
+		fprintf(fp, "\n");
+	}
+	fclose(fp);*/
 	double *low = (double*)malloc(dim * sizeof(double));
 	double *up = (double*)malloc(dim * sizeof(double));
 	for (j = 0; j < numBands; j++)
@@ -479,44 +480,92 @@ int main()
 	userdat.tmp = tmpDat;
 	userdat.gridSize = ud_gridSize;
 	void *userdataPtr = (void*)&userdat;
-	double *gbestDE = (double*)malloc(dim * sizeof(double));
-	double *gbestfminsearch = (double*)malloc(dim * sizeof(double));
-	double *gbestFPA = (double*)malloc(dim * sizeof(double));
+	double *gbest = (double*)malloc(dim * sizeof(double));
+	double *gbest2 = (double*)malloc(dim * sizeof(double));
+	// Select probability density function that shapes internal random number distribution
+	double(*pdf1)(pcg32x2_random_t*) = randn_pcg32x2;
 	// GUI display?
 	yourGUI gui;
 	gui.display1 = (double*)malloc(dim * sizeof(double));
 	void *guiData = (void*)&gui;
 	void(*optStatus)(void*, unsigned int, double*, double*) = optimizationHistoryCallback;
-	// Select probability density function that shapes internal random number distribution
-	double(*pdf1)(pcg32x2_random_t*) = rand_tri_pcg32x2;
-	double gmin = differentialEvolution(peakingCostFunctionMap, userdataPtr, initialAns, K, N, dim, low, up, 20000, gbestDE, &PRNG, pdf1, optStatus, guiData);
-	// DE is relatively robust, but require a lot iteration to converge, we then improve DE result using fminsearch
-	// fminsearchbnd can be a standalone algorithm, but would high dimension or even some simple curve
-	// but overall fminsearchbnd converge faster than other 2 algorithms in current library for current fitting purpose
-	double fval = fminsearchbnd(peakingCostFunctionMap, userdataPtr, gbestDE, low, up, dim, 1e-8, 1e-8, 6000, gbestfminsearch, 0, optStatus, guiData);
-	// Standalone fminsearch
-	double fval2 = fminsearchbnd(peakingCostFunctionMap, userdataPtr, initialAns, low, up, dim, 1e-8, 1e-8, 10000, gbestfminsearch, 0, optStatus, guiData);
-	// Flower pollination could be as robust as DE, user could also improve FPA result using fminsearch
-	double gmin2 = flowerPollination(peakingCostFunctionMap, userdataPtr, initialAns, low, up, dim, K * N, 0.1, 0.05, 3000, gbestFPA, &PRNG, pdf1, optStatus, guiData);
-	printf("%1.14lf %1.14lf %1.14lf %1.14lf\n", gmin, fval, fval2, gmin2);
+
+	FILE *fp = fopen("sol.txt", "wb");
+
+	char simplexDimensionAdaptive = 0; // Adjustable for fminsearchbnd and Hybrid optimizations
+
+	// DE standalone
+	double probiBound = 0.99;
+	double deFval = differentialEvolution(peakingCostFunctionMap, userdataPtr, initialAns, K, N, probiBound, dim, low, up, 20000, gbest, &PRNG, pdf1, optStatus, guiData);
+	fprintf(fp, "DE\nplot(peakingFunctionMap([");
 	for (i = 0; i < dim; i++)
-		printf("%1.14lf,", gbestfminsearch[i]);
+		fprintf(fp, "%1.14lf,", gbest[i]);
+	fprintf(fp, "], userdata))\n");
+
+	// DE is relatively robust, we then improve DE result using fminsearchbnd
+	double hybOpt1Fval = fminsearchbnd(peakingCostFunctionMap, userdataPtr, gbest, low, up, dim, 1e-8, 1e-8, 10000, gbest2, simplexDimensionAdaptive, optStatus, guiData);
+	fprintf(fp, "Hybrid opt 1(DE + fminsearchbnd)\nplot(peakingFunctionMap([");
+	for (i = 0; i < dim; i++)
+		fprintf(fp, "%1.14lf,", gbest2[i]);
+	fprintf(fp, "], userdata))\n");
+
+	// Standalone simplex search
+	double fminsFval = fminsearchbnd(peakingCostFunctionMap, userdataPtr, initialAns, low, up, dim, 1e-8, 1e-8, 20000, gbest, simplexDimensionAdaptive, optStatus, guiData);
+	fprintf(fp, "fminsearchbnd\nplot(peakingFunctionMap([");
+	for (i = 0; i < dim; i++)
+		fprintf(fp, "%1.14lf,", gbest[i]);
+	fprintf(fp, "], userdata))\n");
+
+	// Flower pollination standalone
+	double pCond = 0.1;
+	double weightStep = 0.05;
+	double fpaFval = flowerPollination(peakingCostFunctionMap, userdataPtr, initialAns, low, up, dim, K * N, pCond, weightStep, 4000, gbest, &PRNG, pdf1, optStatus, guiData);
+	fprintf(fp, "fpa\nplot(peakingFunctionMap([");
+	for (i = 0; i < dim; i++)
+		fprintf(fp, "%1.14lf,", gbest[i]);
+	fprintf(fp, "], userdata))\n");
+
+	// Flower pollination could be as robust as DE, user could also improve FPA result using fminsearchbnd too
+	double hybOpt2Fval = fminsearchbnd(peakingCostFunctionMap, userdataPtr, gbest, low, up, dim, 1e-8, 1e-8, 10000, gbest2, simplexDimensionAdaptive, optStatus, guiData);
+	fprintf(fp, "Hybrid opt 2(FPA + fminsearchbnd)\nplot(peakingFunctionMap([");
+	for (i = 0; i < dim; i++)
+		fprintf(fp, "%1.14lf,", gbest2[i]);
+	fprintf(fp, "], userdata))\n");
+
+	// CHIO standalone
+	unsigned int maxSolSurviveEpoch = 100;
+	unsigned int C0 = 6;
+	double spreadingRate = 0.05;
+	double chioFval = CHIO(peakingCostFunctionMap, userdataPtr, initialAns, K * N, maxSolSurviveEpoch, C0, spreadingRate, dim, low, up, 4000, gbest, &PRNG, optStatus, guiData);
+	fprintf(fp, "CHIO\nplot(peakingFunctionMap([");
+	for (i = 0; i < dim; i++)
+		fprintf(fp, "%1.14lf,", gbest[i]);
+	fprintf(fp, "], userdata))\n");
+
+	// Improve the result using fminsearchbnd hold for CHIO too
+	double hybOpt3Fval = fminsearchbnd(peakingCostFunctionMap, userdataPtr, gbest, low, up, dim, 1e-8, 1e-8, 10000, gbest2, simplexDimensionAdaptive, optStatus, guiData);
+	fprintf(fp, "Hybrid opt 3(CHIO + fminsearchbnd)\nplot(peakingFunctionMap([");
+	for (i = 0; i < dim; i++)
+		fprintf(fp, "%1.14lf,", gbest2[i]);
+	fprintf(fp, "], userdata))\n");
+	printf("Cost function MSE:\nDE: %1.14lf\nHybOpt1: %1.14lf\nfminsearchbnd: %1.14lf\nFPA: %1.14lf\nHybOpt2: %1.14lf\nCHIO: %1.14lf\nHybOpt3: %1.14lf\n", deFval, hybOpt1Fval, fminsFval, fpaFval, hybOpt2Fval, chioFval, hybOpt3Fval);
+
 	// Sort result vector by frequency
 	idx = (unsigned int*)malloc(numBands * sizeof(unsigned int));
-	sort(gbestfminsearch, numBands, idx);
+	sort(gbest2, numBands, idx);
 	double *sortedOptVector = (double*)malloc(dim * sizeof(double));
 	for (i = 0; i < numBands; i++)
 	{
-		sortedOptVector[i] = gbestfminsearch[i];
-		sortedOptVector[numBands + i] = gbestfminsearch[numBands + idx[i]];
-		sortedOptVector[numBands * 2 + i] = gbestfminsearch[numBands * 2 + idx[i]];
+		sortedOptVector[i] = gbest2[i];
+		sortedOptVector[numBands + i] = gbest2[numBands + idx[i]];
+		sortedOptVector[numBands * 2 + i] = gbest2[numBands * 2 + idx[i]];
 	}
-	printf("\n");
+	fclose(fp);
+	/*printf("\n");
 	for (i = 0; i < dim; i++)
-		printf("%1.14lf,", sortedOptVector[i]);
-	free(gbestDE);
-	free(gbestfminsearch);
-	free(gbestFPA);
+		printf("%1.14lf,", sortedOptVector[i]);*/
+	free(gbest);
+	free(gbest2);
 	free(idx);
 	free(sortedOptVector);
 

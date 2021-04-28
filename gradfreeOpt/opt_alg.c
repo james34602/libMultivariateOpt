@@ -1,4 +1,4 @@
-﻿#include <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -584,7 +584,7 @@ double fminsearchbnd(double(*funcPtr)(double*, void*), void *userdat, double *x0
 	}
 	return fval;
 }
-double differentialEvolution(double(*funcPtr)(double*, void*), void *userdat, double *initialSolution, unsigned int K, unsigned int N, unsigned int D, double *low, double *up, unsigned int MaxIter, double *gbest, pcg32x2_random_t *PRNG, double(*pdf1)(pcg32x2_random_t*), void(*optStatus)(void*, unsigned int, double*, double*), void *optHost)
+double differentialEvolution(double(*funcPtr)(double*, void*), void *userdat, double *initialSolution, unsigned int K, unsigned int N, const double probiBound, unsigned int D, double *low, double *up, unsigned int MaxIter, double *gbest, pcg32x2_random_t *PRNG, double(*pdf1)(pcg32x2_random_t*), void(*optStatus)(void*, unsigned int, double*, double*), void *optHost)
 {
 	unsigned i, j;
 	// Initialization
@@ -729,12 +729,29 @@ double differentialEvolution(double(*funcPtr)(double*, void*), void *userdat, do
 			for (j = 0; j < D; j++)
 				T[i * D + j] = P[i * D + j] + (double)map[i * D + j] * F * (w1 * (dv2[i * D + j] - P[i * D + j]) + w2 * ((S[j2_first[i] * D + j] - P[i * D + j])));
 		}
-		for (i = 0; i < N; i++)
+		double p1 = c_rand(PRNG);
+		if (p1 > probiBound)
 		{
-			for (j = 0; j < D; j++)
+			for (i = 0; i < N; i++)
 			{
-				if (T[i * D + j] < low[j] || T[i * D + j] > up[j])
-					T[i * D + j] = c_rand(PRNG) * (up[j] - low[j]) + low[j];
+				for (j = 0; j < D; j++)
+				{
+					if (T[i * D + j] < low[j] || T[i * D + j] > up[j])
+						T[i * D + j] = c_rand(PRNG) * (up[j] - low[j]) + low[j];
+				}
+			}
+		}
+		else
+		{
+			for (i = 0; i < N; i++)
+			{
+				for (j = 0; j < D; j++)
+				{
+					if (T[i * D + j] < low[j])
+						T[i * D + j] = low[j];
+					if (T[i * D + j] > up[j])
+						T[i * D + j] = up[j];
+				}
 			}
 		}
 		// Update the sub-pattern matrix, P and fitP
@@ -792,7 +809,7 @@ double differentialEvolution(double(*funcPtr)(double*, void*), void *userdat, do
 	free(S);
 	return gmin;
 }
-double flowerPollination(double(*funcPtr)(double*, void*), void *userdat, double *initialSolution, double *low, double *up, unsigned int D, unsigned int popSize, double p, double weightStep, unsigned int N_iter, double *gbest, pcg32x2_random_t *PRNG, double(*pdf1)(pcg32x2_random_t*), void(*optStatus)(void*, unsigned int, double*, double*), void *optHost)
+double flowerPollination(double(*funcPtr)(double*, void*), void *userdat, double *initialSolution, double *low, double *up, unsigned int D, unsigned int popSize, double pCond, double weightStep, unsigned int N_iter, double *gbest, pcg32x2_random_t *PRNG, double(*pdf1)(pcg32x2_random_t*), void(*optStatus)(void*, unsigned int, double*, double*), void *optHost)
 {
 	unsigned i, j;
 	// Initialization
@@ -826,7 +843,7 @@ double flowerPollination(double(*funcPtr)(double*, void*), void *userdat, double
 			// This L should be drawn from the Levy distribution
 			// Formula: x_i ^ { t + 1 } = x_i ^ t + L(x_i^t - gbest)
 			double tmp1 = c_rand(PRNG);
-			if (tmp1 > p) // Probability (p) is checked after drawing a rand
+			if (tmp1 > pCond) // Probability (pCond) is checked after drawing a rand
 			{
 				const double beta = 3.0 / 2.0;
 				double sigma = pow(tgamma(1 + beta) * sin(M_PI * beta / 2) / (tgamma((1 + beta) / 2) * beta * pow(2.0, (beta - 1.0) / 2.0)), 1.0 / beta);
@@ -881,5 +898,167 @@ double flowerPollination(double(*funcPtr)(double*, void*), void *userdat, double
 	free(S);
 	free(JK);
 	free(Sol);
+	return gmin;
+}
+double CHIO(double(*funcPtr)(double*, void*), void *userdat, double *initialSolution, unsigned int popSize, unsigned int maxSolSurviveEpoch, unsigned int C0, double spreadingRate, unsigned int dim, double *lb, double *ub, unsigned int MaxIter, double *gbest, pcg32x2_random_t *PRNG, void(*optStatus)(void*, unsigned int, double*, double*), void *optHost)
+{
+	unsigned i, j;
+	//unsigned int maxSolSurviveEpoch = 100;
+	//unsigned int C0 = 6; // Number of solutions get infected
+	//double spreadingRate = 0.05; // Spreading rate parameter
+	// Initialization
+	double *fitS = (double*)malloc(popSize * sizeof(double));
+	unsigned int *Age = (unsigned int*)malloc(popSize * sizeof(unsigned int));
+	memset(Age, 0, popSize * sizeof(unsigned int));
+	double *Fitness = (double*)malloc(popSize * sizeof(double));
+	unsigned char *solFlag = (unsigned char*)malloc(popSize * sizeof(unsigned char));
+	memset(solFlag, 0, popSize * sizeof(unsigned char));
+	unsigned int *confirmedList = (unsigned int*)malloc(popSize * sizeof(unsigned int));
+	unsigned int *normList = (unsigned int*)malloc(popSize * sizeof(unsigned int));
+	double *S = (double*)malloc(popSize * dim * sizeof(double));
+	double *NewSol = (double*)malloc(dim * sizeof(double));
+	if (initialSolution)
+		memcpy(S, initialSolution, popSize * dim * sizeof(double));
+	else
+	{
+		for (i = 0; i < popSize; i++)
+		{
+			for (j = 0; j < dim; j++)
+				S[i * dim + j] = c_rand(PRNG) * (ub[j] - lb[j]) + lb[j];
+		}
+	}
+	for (i = 0; i < popSize; i++)
+		fitS[i] = funcPtr(S + i * dim, userdat);
+	unsigned int gminIdx;
+	double gmin = minArray(fitS, popSize, &gminIdx);
+	for (i = 0; i < popSize; i++)
+	{
+		if (fitS[i] >= 0.0)
+			Fitness[i] = 1.0 / (fitS[i] + 1);
+		else
+			Fitness[i] = 1.0 + fabs(fitS[i]);
+	}
+	for (i = 0; i < C0; i++)
+		solFlag[(unsigned int)(c_rand(PRNG) * popSize)] = 1;
+	unsigned int infected, numConfirmed, numNormal;
+	unsigned char numRec;
+	for (unsigned int epk = 0; epk < MaxIter; epk++)
+	{
+		for (unsigned int pol = 0; pol < popSize; pol++)
+		{
+			memcpy(NewSol, &S[pol * dim], dim * sizeof(double));
+			infected = 0;
+			numConfirmed = 0;
+			numNormal = 0;
+			numRec = 0;
+			for (i = 0; i < popSize; i++)
+			{
+				if (solFlag[i] == 0)
+				{
+					normList[numNormal] = i;
+					numNormal = numNormal + 1;
+				}
+				if (solFlag[i] == 1)
+				{
+					confirmedList[numConfirmed] = i;
+					numConfirmed = numConfirmed + 1;
+				}
+			}
+			for (i = 0; i < popSize; i++)
+			{
+				if (fitS[i] != 0 && solFlag[i] == 2)
+				{
+					numRec = 1;
+					break;
+				}
+			}
+			for (j = 0; j < dim; j++)
+			{
+				double r = c_rand(PRNG); // select a number within range 0 to 1
+				if ((r < spreadingRate / 3) && (numConfirmed > 0))
+				{
+					// select one of the confirmed solutions
+					unsigned int z = (unsigned int)round((numConfirmed - 1) * c_rand(PRNG));
+					unsigned int zc = confirmedList[z];
+					// modify the curent value
+					NewSol[j] = S[pol * dim + j] + (S[pol * dim + j] - S[zc * dim + j]) * (c_rand(PRNG) - 0.5) * 2;
+					// manipulate range between lb and ub
+					NewSol[j] = min(max(NewSol[j], lb[j]), ub[j]);
+					infected = infected + 1;
+				}
+				else if ((r < spreadingRate / 2) && numNormal > 0)
+				{
+					// select one of the normal solutions
+					unsigned int z = (unsigned int)round((numNormal - 1) * c_rand(PRNG));
+					unsigned int zn = normList[z];
+					// modify the curent value
+					NewSol[j] = S[pol * dim + j] + (S[pol * dim + j] - S[zn * dim + j]) * (c_rand(PRNG) - 0.5) * 2;
+					// manipulate range between lb and ub
+					NewSol[j] = min(max(NewSol[j], lb[j]), ub[j]);
+				}
+				else if (r < spreadingRate && numRec == 1)
+				{
+					// modify the curent value
+					NewSol[j] = S[pol * dim + j] + (S[pol * dim + j] - S[j]) * (c_rand(PRNG) - 0.5) * 2;
+					// manipulate range between lb and ub
+					NewSol[j] = min(max(NewSol[j], lb[j]), ub[j]);
+				}
+			}
+			// evaluate new solution
+			double ObjValSol = funcPtr(NewSol, userdat);
+			double FitnessSol;
+			if (ObjValSol >= 0)
+				FitnessSol = 1.0 / (ObjValSol + 1.0);
+			else
+				FitnessSol = 1.0 + fabs(ObjValSol);
+			// Update the curent solution & Age of the current solution
+			if (fitS[pol] > ObjValSol)
+			{
+				memcpy(&S[pol * dim], NewSol, dim * sizeof(double));
+				Fitness[pol] = FitnessSol;
+				fitS[pol] = ObjValSol;
+			}
+			else
+			{
+				if (solFlag[pol] == 1)
+					Age[pol] = Age[pol] + 1;
+			}
+			double mean = 0.0;
+			for (i = 0; i < popSize; i++)
+				mean += Fitness[i];
+			mean /= (double)popSize;
+			// change the solution from normal to confirmed
+			if ((Fitness[pol] < mean) && solFlag[pol] == 0 && infected > 0)
+			{
+				solFlag[pol] = 1;
+				Age[pol] = 1;
+			}
+			// change the solution from confirmed to recovered
+			if ((Fitness[pol] >= mean) && solFlag[pol] == 1)
+			{
+				solFlag[pol] = 2;
+				Age[pol] = 0;
+			}
+			// Regenerated solution from scratch
+			if (Age[pol] >= maxSolSurviveEpoch)
+			{
+				for (i = 0; i < dim; i++)
+					S[pol * dim + i] = c_rand(PRNG) * (ub[i] - lb[i]) + lb[i];
+				solFlag[pol] = 0;
+			}
+		}
+		gmin = minArray(fitS, popSize, &gminIdx);
+		memcpy(gbest, &S[gminIdx * dim], dim * sizeof(double));
+		if (optStatus)
+			optStatus(optHost, dim, gbest, &gmin);
+	}
+	free(fitS);
+	free(Age);
+	free(Fitness);
+	free(solFlag);
+	free(confirmedList);
+	free(normList);
+	free(S);
+	free(NewSol);
 	return gmin;
 }
