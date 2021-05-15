@@ -385,12 +385,22 @@ int main()
 	unsigned int *maximaIndex = peakfinder_wrapper(target, ud_gridSize, 0.1, 1, &numMaximas);
 	unsigned int *minimaIndex = peakfinder_wrapper(target, ud_gridSize, 0.1, 0, &numMinimas);
 	unsigned int numBands = numMaximas + numMinimas;
+	// Model complexity code start
+	float modelComplexity = 100.0f; // 10% - 120%
+	unsigned int oldBandNum = numBands;
+	numBands = roundf(numBands * modelComplexity / 100.0f);
 	double *flt_fc = (double*)malloc(numBands * sizeof(double));
-	unsigned int *idx = (unsigned int*)malloc(numBands * sizeof(unsigned int));
 	for (i = 0; i < numMaximas; i++)
 		flt_fc[i] = flt_freqList[maximaIndex[i]];
-	for (i = numMaximas; i < numBands; i++)
+	for (i = numMaximas; i < ((numBands < oldBandNum) ? numBands : oldBandNum); i++)
 		flt_fc[i] = flt_freqList[minimaIndex[i - numMaximas]];
+	if (numBands > oldBandNum)
+	{
+		for (i = oldBandNum; i < numBands; i++)
+			flt_fc[i] = c_rand(&PRNG) * (upFc - lowFc) + lowFc;
+	}
+	// Model complexity code end
+	unsigned int *idx = (unsigned int*)malloc(numBands * sizeof(unsigned int));
 	sort(flt_fc, numBands, idx);
 	// Initial value must not get out-of-bound, more importantly.
 	// If value go too extreme, NaN will happens when frequency place on either too close to DC and touching/beyond Nyquist
@@ -407,6 +417,7 @@ int main()
 	double highestFreq2Gen = 14000.0;
 	double *dFreqDiscontin = (double*)malloc(numBands * sizeof(double));
 	double *dif = (double*)malloc(numBands * sizeof(double));
+	unsigned int cnt = 0;
 	while (smallestJump <= 20.0)
 	{
 		derivative(flt_fc, numBands, 1, dFreqDiscontin, dif);
@@ -415,6 +426,9 @@ int main()
 		double newFreq = c_rand(&PRNG) * (highestFreq2Gen - lowestFreq2Gen) + lowestFreq2Gen;
 		flt_fc[smIdx] = newFreq;
 		sort(flt_fc, numBands, idx);
+		cnt++;
+		if (cnt > 50)
+			break;
 	}
 	free(idx);
 	double *flt_peak_g = (double*)malloc(numBands * sizeof(double));
@@ -496,19 +510,18 @@ int main()
 
 	// DE standalone
 	double probiBound = 0.99;
-	double deFval = differentialEvolution(peakingCostFunctionMap, userdataPtr, initialAns, K, N, probiBound, dim, low, up, 20000, gbest, &PRNG, pdf1, optStatus, guiData);
+	double deFval = differentialEvolution(peakingCostFunctionMap, userdataPtr, initialAns, K, N, probiBound, dim, low, up, 22000, gbest, &PRNG, pdf1, optStatus, guiData);
 	fprintf(fp, "DE\nplot(peakingFunctionMap([");
 	for (i = 0; i < dim; i++)
 		fprintf(fp, "%1.14lf,", gbest[i]);
 	fprintf(fp, "], userdata))\n");
-
 	// DE is relatively robust, we then improve DE result using fminsearchbnd
 	double hybOpt1Fval = fminsearchbnd(peakingCostFunctionMap, userdataPtr, gbest, low, up, dim, 1e-8, 1e-8, 10000, gbest2, simplexDimensionAdaptive, optStatus, guiData);
 	fprintf(fp, "Hybrid opt 1(DE + fminsearchbnd)\nplot(peakingFunctionMap([");
 	for (i = 0; i < dim; i++)
 		fprintf(fp, "%1.14lf,", gbest2[i]);
 	fprintf(fp, "], userdata))\n");
-
+	exit(1);
 	// Standalone simplex search
 	double fminsFval = fminsearchbnd(peakingCostFunctionMap, userdataPtr, initialAns, low, up, dim, 1e-8, 1e-8, 20000, gbest, simplexDimensionAdaptive, optStatus, guiData);
 	fprintf(fp, "fminsearchbnd\nplot(peakingFunctionMap([");
