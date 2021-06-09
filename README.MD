@@ -5,7 +5,7 @@ Differential evolution
 
 - Bezier Search
 - Almost parameter free
-- Allow bound constraints, bound clipping or renew probability
+- Allow bound constraints, bound clipping or renew solutions
 
 Nelder-Mead Simplex search with bound constraints
 
