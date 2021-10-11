@@ -1,4 +1,4 @@
-#include "rand_c.h"
+#include "../../libgenmath/rand_c.h"
 double minArray(double *x, unsigned int N, unsigned int *ind);
 void sort(double x_data[], const unsigned int xSize, unsigned int idx_data[]);
 double fminsearch(double(*funcPtr)(double*, void*), void *userdat, double *x, unsigned int n, double TolX, double TolFun, unsigned int MaxIter, double *outX, char adaptive, void(*optStatus)(void*, unsigned int, double*, double*), void *optHost);

@@ -15,3 +15,4 @@ double randn_pcg32x2(pcg32x2_random_t *rng);
 double rand_tri_pcg32x2(pcg32x2_random_t *rng);
 double rand_hann(pcg32x2_random_t *rng);
 void randperm(unsigned int *linearArray, unsigned int n, pcg32x2_random_t *PRNG);
+void arbitraryPDF(double *probX, double *probY, unsigned int n, double *cdf, double *pxiRet, unsigned int coaurse_Fine);

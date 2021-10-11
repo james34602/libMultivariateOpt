@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdint.h>
 #include "rand_c.h"
+#include "interpolation2.h"
 static const double tbl1[257] = { 0.0, 0.215241895984875, 0.286174591792068,
   0.335737519214422, 0.375121332878378, 0.408389134611989, 0.43751840220787,
   0.46363433679088, 0.487443966139235, 0.50942332960209, 0.529909720661557,
@@ -258,9 +259,70 @@ void randperm(unsigned int *linearArray, unsigned int n, pcg32x2_random_t *PRNG)
 		linearArray[i] = i;
 	for (i = n - 1; i > 0; i--)
 	{
-		j = pcg32x2_random_r(PRNG) % (i + 1); //randomise j for shuffle with Fisher Yates
+		j = pcg32x2_random_r(PRNG) % (i + 1); // Randomize j for shuffle with Fisher Yates
 		tmp = linearArray[j];
 		linearArray[j] = linearArray[i];
 		linearArray[i] = tmp;
 	}
 }
+void arbitraryPDF(double *probX, double *probY, unsigned int n, double *cdf, double *pxiRet, unsigned int coaurse_Fine)
+{
+	unsigned int i;
+	double *px = (double*)malloc(n * sizeof(double));
+	memcpy(px, probX, n * sizeof(double));
+	double *p = (double*)malloc(n * sizeof(double));
+	unsigned int *idx = (unsigned int*)malloc(n * sizeof(unsigned int));
+	sort(px, n, idx);
+	for (i = 0; i < n; i++)
+		p[i] = probY[idx[i]];
+	free(idx);
+	double minpx = px[0];
+	double maxpx = px[n - 1];
+	double trapz = (px[1] - px[0]) * (p[1] + p[0]) * 0.5;
+	for (i = 1; i < n - 1; i++)
+		trapz += (px[i + 1] - px[i]) * (p[i + 1] + p[i]) * 0.5;
+	double aa = 1.0 / trapz;
+	double d = ((maxpx - minpx) / (double)(coaurse_Fine - 1));
+	double dt = d * 0.5;
+	double pxi, pi, sumWithPrevious;
+	double cumsum = 0.0;
+	cdf[0] = 0.0;
+	pxiRet[0] = minpx;
+	double previousPi = npointWndFunctionYWeighted(minpx, px, p, n, aa);
+	double maxV = 0.0;
+	for (i = 1; i < coaurse_Fine - 1; i++)
+	{
+		pxi = minpx + i * d;
+		pxiRet[i] = pxi;
+		pi = npointWndFunctionYWeighted(pxi, px, p, n, aa);
+		sumWithPrevious = previousPi + pi;
+		previousPi = pi;
+		cumsum += dt * sumWithPrevious;
+		if (cumsum > maxV)
+			maxV = cumsum;
+		cdf[i] = cumsum;
+	}
+	pxi = minpx + (coaurse_Fine - 1) * d;
+	pxiRet[coaurse_Fine - 1] = pxi;
+	cdf[coaurse_Fine - 1] = cumsum + dt * (previousPi + npointWndFunctionYWeighted(pxi, px, p, n, aa));
+	if (cdf[coaurse_Fine - 1] > maxV)
+		maxV = cdf[coaurse_Fine - 1];
+	maxV = 1.0 / maxV;
+	for (i = 0; i < coaurse_Fine; i++)
+		cdf[i] *= maxV;
+	free(px);
+	free(p);
+}
+/*unsigned int finess = 2057;
+double px[14] = { 0, 0.1, 0.3, 0.5, 1.0, 1.5, 2, 2.5, 3, 4.0, 4.5, 6.0, 10, 30 };
+double prob[14] = { 0, DBL_EPSILON, 0.01, 2.0, 15, 8, 7, 6, 3, 1.2, 1, 0.8, 0.05, 0 };
+double *cdf = (double*)malloc(finess * sizeof(double));
+double *pxi = (double*)malloc(finess * sizeof(double));
+arbitraryPDF(px, prob, 14, cdf, pxi, finess);
+FILE *fp2 = fopen("customDis.txt", "wb");
+for (int i = 0; i < 500; i++)
+	fprintf(fp2, "%1.15lf,", npointWndFunction(c_rand(&PRNG), cdf, pxi, finess));
+fprintf(fp2, "%1.15lf", npointWndFunction(c_rand(&PRNG), cdf, pxi, finess));
+fclose(fp2);
+free(cdf);
+free(pxi);*/
