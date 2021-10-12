@@ -3,9 +3,12 @@
 
 Reverse mode automatic differentiation
 
-- KANN library
+- Based on KANN library
 - Extra functions other than "stock" KANN
 - Differentiable tensor-scalar operation for Add, Sub, Mul, Div
+
+#### Is the library reliable?
+Not quite, but I'm working on it to make it as robust as other AD library
 
 #### Q/A
 

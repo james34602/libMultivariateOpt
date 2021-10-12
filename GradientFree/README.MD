@@ -9,8 +9,6 @@ Differential evolution
 
 Nelder-Mead Simplex search with bound constraints
 
-- Dimension adaptive
-
 Flower pollination search
 
 CHIO search
