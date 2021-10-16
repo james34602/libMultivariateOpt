@@ -20,3 +20,8 @@ A example of optimization history of peaking fit, 60000 iterations:
 Differential Evolution, not bad | Stochastic Gradient descent, unity gain bias is needed
 :-:|:-:
 ![Static picture 1](./PracticalExamples/PeakingFit/DE.png) | ![Static picture 2](./PracticalExamples/PeakingFit/SGD.png)
+
+Bad examples:
+Differential Evolution, 51000 iterations, bad | Stochastic Gradient descent, 51000 iterations, bad | SGD + DE, 21000 iterations, better
+:-:|:-:|:-:
+![Static picture 1](./PracticalExamples/PeakingFit/DE_bad.png) | ![Static picture 2](./PracticalExamples/PeakingFit/SGD_bad.png) | ![Static picture 3](./PracticalExamples/PeakingFit/SGD_DE_bad.png)
