@@ -8,6 +8,7 @@ See each sub-directory for different optimization approaches.
 PracticalExamples folder contains example of:
 
 - Combine mathematical programming and metaheuristics to design of parametric IIR filters
+
 As long as metaheuristics doesn't hurt solution and keep reduce cost function value :)
 
 A example of optimization history of peaking fit, DE go 10000 iterations, SGD go 6000 iterations:

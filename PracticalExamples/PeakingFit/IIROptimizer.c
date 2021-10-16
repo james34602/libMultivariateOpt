@@ -387,6 +387,9 @@ int main()
 	double *cdf = (double*)malloc(finess * sizeof(double));
 	double *pxi = (double*)malloc(finess * sizeof(double));
 	arbitraryPDF(px, prob, 7, cdf, pxi, finess);
+	// Convert uniform grid to log grid is recommended
+	// Nonuniform grid doesn't necessary to be a log grid, but we can force to make it log
+	char forceConvertCurrentGrid2OctaveGrid = 0;
 	// Parameter setup start
 	char algorithm[] = "SGD + DE"; // DE, SGD, SGD + DE, SGD + CHIO
 	const double avgBW = 1.005; // Smaller the value less smooth the output gonna be, of course, don't go too large
@@ -447,9 +450,6 @@ int main()
 		gdType = 0;
 		printf("Uniform grid\n");
 	}
-	// Convert uniform grid to log grid is recommended
-	// Nonuniform grid doesn't necessary to be a log grid, but we can force to make it log
-	char forceConvertCurrentGrid2OctaveGrid = 0;
 	if (forceConvertCurrentGrid2OctaveGrid)
 	{
 		unsigned int oGridSize;
