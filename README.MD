@@ -17,7 +17,7 @@ Differential Evolution, oops! | Stochastic Gradient descent, great!
 ![Animation 1](./PracticalExamples/PeakingFit/DE.gif) | ![Animation 2](./PracticalExamples/PeakingFit/SGD.gif)
 
 A example of optimization history of peaking fit, 60000 iterations:
-Differential Evolution, not bad | Stochastic Gradient descent, unity gain bias is needed
+Differential Evolution, not bad | Stochastic Gradient descent, excellent, unity gain bias is needed
 :-:|:-:
 ![Static picture 1](./PracticalExamples/PeakingFit/DE.png) | ![Static picture 2](./PracticalExamples/PeakingFit/SGD.png)
 
