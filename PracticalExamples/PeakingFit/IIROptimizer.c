@@ -464,8 +464,8 @@ int main()
 	// Bound constraints
 	double lowFc = 10; // Hz
 	double upFc = fs / 2 - 1; // Hz
-	double lowQ = 0.01; // 0.01 - 1000, higher == shaper the filter
-	double upQ = 512; // 0.01 - 1000, higher == shaper the filter
+	double lowQ = 0.000001; // 0.000001 - 1000, higher == shaper the filter
+	double upQ = 1000; // 0.000001 - 1000, higher == shaper the filter
 	double lowGain = target[0]; // dB
 	double upGain = target[0]; // dB
 	for (i = 1; i < ud_gridSize; i++)
@@ -475,8 +475,8 @@ int main()
 		if (target[i] > upGain)
 			upGain = target[i];
 	}
-	lowGain -= 25.0;
-	upGain += 25.0;
+	lowGain -= 32.0;
+	upGain += 32.0;
 	unsigned int numMaximas, numMinimas;
 	unsigned int *maximaIndex = peakfinder_wrapper(target, ud_gridSize, 0.1, 1, &numMaximas);
 	unsigned int *minimaIndex = peakfinder_wrapper(target, ud_gridSize, 0.1, 0, &numMinimas);
