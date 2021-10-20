@@ -81,7 +81,6 @@ void emaZpSmooth(void *handle, float *x, float *y, char boundaryMode)
 		ema = tmp[i] * sm->alpha + ema * sm->minusAlpha;
 		tmp[i] = ema;
 	}
-	ema = 0.0f;
 	for (i = sm->tmpLen; i-- >= sm->target1; )
 		ema = tmp[i] * sm->alpha + ema * sm->minusAlpha;
 	for (i = sm->target2; i-- > sm->pos1; )
